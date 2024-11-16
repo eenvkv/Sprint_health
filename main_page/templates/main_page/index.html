@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Оценка эффективности спринта</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script> <!-- Библиотека для работы с Excel файлами -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -78,39 +79,67 @@
 
         <!-- Место для диаграмм -->
         <div id="charts" style="display:none;">
-            <canvas id="sprint-health-chart"></canvas>
-            <canvas id="sprint-rating-chart"></canvas>
+            <div style="max-width: 300px; margin: 0 auto;">
+                <canvas id="sprint-health-chart"></canvas>
+            </div>
+            <div style="max-width: 500px; margin: 0 auto;">
+                <canvas id="sprint-rating-chart" height="200"></canvas>
+            </div>
         </div>
 
-        <!-- Формы для загрузки файлов -->
-        <input type="file" id="excel-file1" accept=".xlsx" style="display: none;">
-        <input type="file" id="excel-file2" accept=".xlsx" style="display: none;">
-        <input type="file" id="excel-file3" accept=".xlsx" style="display: none;">
+        <input type="file" id="file-input" accept=".csv" style="display: none;">
     </div>
 
     <script>
+        let uploadedFiles = [];
+
         document.getElementById('upload-button').addEventListener('click', function() {
-            document.getElementById('excel-file1').click();
-            document.getElementById('excel-file2').click();
-            document.getElementById('excel-file3').click();
+            document.getElementById('file-input').click();
+        });
+
+        document.getElementById('file-input').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (file) {
+                Papa.parse(file, {
+                    complete: function(results) {
+                        console.log("Файл загружен:", file.name);
+                        console.log("Данные из файла:", results.data);
+                        uploadedFiles.push(results.data);
+
+                        if (uploadedFiles.length < 3) {
+                            alert("Файл успешно загружен. Пожалуйста, загрузите следующий.");
+                            document.getElementById('file-input').click();
+                        } else {
+                            alert("Все файлы загружены. Вы можете начать анализ.");
+                        }
+                    },
+                    header: true
+                });
+            }
         });
 
         document.getElementById('start-button').addEventListener('click', function() {
-            document.getElementById('charts').style.display = 'block';
-            createCharts();
+            if (uploadedFiles.length === 3) {
+                document.getElementById('charts').style.display = 'block';
+                createCharts();
+            } else {
+                alert("Загрузите все три файла перед началом анализа.");
+            }
         });
 
         function createCharts() {
             var ctx1 = document.getElementById('sprint-health-chart').getContext('2d');
             var ctx2 = document.getElementById('sprint-rating-chart').getContext('2d');
 
-            // Круговая диаграмма "Здоровье спринта"
+            const sprintData = processSprintData(uploadedFiles);
+            const sprintRatingData = processRatingData(uploadedFiles);
+
             var sprintHealthChart = new Chart(ctx1, {
                 type: 'pie',
                 data: {
                     labels: ['Завершено', 'В процессе', 'Не начато'],
                     datasets: [{
-                        data: [60, 30, 10], // Примерные данные
+                        data: sprintData,
                         backgroundColor: ['#4CAF50', '#FFEB3B', '#F44336'],
                     }]
                 },
@@ -131,14 +160,13 @@
                 }
             });
 
-            // Диаграмма "Оценка спринта"
             var sprintRatingChart = new Chart(ctx2, {
                 type: 'bar',
                 data: {
                     labels: ['Команда 1', 'Команда 2', 'Команда 3'],
                     datasets: [{
                         label: 'Оценка спринта',
-                        data: [85, 75, 90], // Примерные данные
+                        data: sprintRatingData,
                         backgroundColor: '#2196F3',
                         borderColor: '#1976D2',
                         borderWidth: 1
@@ -158,36 +186,46 @@
             });
         }
 
-        // Функция для загрузки данных из Excel файлов
-        function handleFile(fileInput, callback) {
-            fileInput.addEventListener('change', function(event) {
-                const files = event.target.files;
-                if (files.length > 0) {
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        const data = e.target.result;
-                        const workbook = XLSX.read(data, { type: 'binary' });
-                        const sheetNames = workbook.SheetNames;
-                        const sheetData = sheetNames.map(function(sheetName) {
-                            return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
-                        });
-                        callback(sheetData);
-                    };
-                    reader.readAsBinaryString(files[0]);
-                }
+        function processSprintData(files) {
+            let statuses = { "Завершено": 0, "В процессе": 0, "Не начато": 0 };
+
+            files.forEach(fileData => {
+                fileData.forEach(row => {
+                    if (row["Статус"]) {
+                        if (row["Статус"] === "Завершено") {
+                            statuses["Завершено"] += 1;
+                        } else if (row["Статус"] === "В процессе") {
+                            statuses["В процессе"] += 1;
+                        } else if (row["Статус"] === "Не начато") {
+                            statuses["Не начато"] += 1;
+                        }
+                    }
+                });
             });
+
+            let summa = statuses["Завершено"] + statuses["В процессе"] + statuses["Не начато"];
+            let st1 = statuses["Завершено"]*100/summa;
+            let st2 = statuses["В процессе"]*100/summa;
+            let st3 = statuses["Не начато"]*100/summa;
+
+            return [st1, st2, st3];
         }
 
-        // Обработка загрузки всех файлов
-        handleFile(document.getElementById('excel-file1'), function(data) {
-            console.log('Данные из файла 1:', data);
-        });
-        handleFile(document.getElementById('excel-file2'), function(data) {
-            console.log('Данные из файла 2:', data);
-        });
-        handleFile(document.getElementById('excel-file3'), function(data) {
-            console.log('Данные из файла 3:', data);
-        });
+        function processRatingData(files) {
+            let ratings = [0, 0, 0];
+
+            files.forEach(fileData => {
+                fileData.forEach(row => {
+                    if (row["Оценка"]) {
+                        if (row["Команда"] === "Команда 1") ratings[0] += parseInt(row["Оценка"]);
+                        if (row["Команда"] === "Команда 2") ratings[1] += parseInt(row["Оценка"]);
+                        if (row["Команда"] === "Команда 3") ratings[2] += parseInt(row["Оценка"]);
+                    }
+                });
+            });
+
+            return ratings.map(rating => rating / files.length);
+        }
     </script>
 </body>
 </html>
